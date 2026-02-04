@@ -9,7 +9,12 @@ if(NOT WIN32)
     message(FATAL_ERROR "Axeman is a Windows-only tool.")
 endif()
 
-add_executable(axeman src/main.cpp)
+# WIN32 tells CMake to build a GUI app (WinMain) instead of Console (main)
+add_executable(axeman WIN32 src/main.cpp)
 
 # Link necessary Windows libraries
-target_link_libraries(axeman psapi)
+# user32: Window management
+# shell32: System tray icons
+# psapi: Memory info
+# advapi32: Process tokens/security
+target_link_libraries(axeman psapi user32 shell32 advapi32)
