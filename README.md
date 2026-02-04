@@ -37,3 +37,6 @@ cmake --build . --config Release
 ## Usage
 Run `axeman.exe` (Run as Administrator recommended for full termination powers).
 The app will start minimized to the tray.
+
+## Attribution
+<a href="https://www.flaticon.com/free-icons/axe" title="axe icons">Axe icons created by ultimatearm - Flaticon</a>

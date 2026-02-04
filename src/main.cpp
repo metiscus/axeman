@@ -9,6 +9,7 @@
 #include <shellapi.h>
 #include <psapi.h>
 #include <tlhelp32.h>
+#include <gdiplus.h>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -18,6 +19,8 @@
 #include <sstream>
 #include <filesystem>
 #include <iomanip>
+
+using namespace Gdiplus;
 
 // --- Constants & Globals ---
 #define WM_TRAYICON (WM_USER + 1)
@@ -30,6 +33,8 @@ const wchar_t* APP_TITLE = L"Axeman";
 
 HWND g_hWindow = NULL;
 NOTIFYICONDATA g_nid = {};
+HICON g_hIconActive = NULL;
+HICON g_hIconPaused = NULL;
 std::atomic<bool> g_running(true);
 std::atomic<bool> g_paused(false);
 
@@ -39,6 +44,18 @@ int g_thresholdPercent = 90;
 std::wstring g_exePath;
 
 // --- Helper Functions ---
+
+HICON LoadPNGAsIcon(const std::wstring& path) {
+    Bitmap* bitmap = Bitmap::FromFile(path.c_str());
+    if (bitmap && bitmap->GetLastStatus() == Ok) {
+        HICON hIcon = NULL;
+        bitmap->GetHICON(&hIcon);
+        delete bitmap;
+        return hIcon;
+    }
+    delete bitmap;
+    return NULL;
+}
 
 std::wstring GetExeDirectory() {
     wchar_t buffer[MAX_PATH];
@@ -51,13 +68,15 @@ void LogKill(const std::wstring& processName, DWORD pid, SIZE_T memoryFreed) {
     std::filesystem::path logPath(g_exePath);
     logPath /= L"axeman.log";
 
-    std::ofstream logFile(logPath, std::ios::app);
+    std::wofstream logFile(logPath, std::ios::app);
     if (logFile.is_open()) {
         auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        logFile << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S") 
-                << " - KILLED: " << std::string(processName.begin(), processName.end())
-                << " (PID: " << pid << ")"
-                << " Freed: " << (memoryFreed / 1024 / 1024) << " MB" << std::endl;
+        struct tm timeinfo;
+        localtime_s(&timeinfo, &now);
+        logFile << std::put_time(&timeinfo, L"%Y-%m-%d %H:%M:%S") 
+                << L" - KILLED: " << processName
+                << L" (PID: " << pid << L")"
+                << L" Freed: " << (memoryFreed / 1024 / 1024) << L" MB" << std::endl;
     }
 }
 
@@ -73,9 +92,15 @@ void LoadConfig() {
 void ShowNotification(const std::wstring& title, const std::wstring& message) {
     wcscpy_s(g_nid.szInfoTitle, title.c_str());
     wcscpy_s(g_nid.szInfo, message.c_str());
+    
+    UINT oldFlags = g_nid.uFlags;
     g_nid.uFlags |= NIF_INFO;
-    g_nid.dwInfoFlags = NIIF_WARNING; // Warning icon in balloon
+    g_nid.dwInfoFlags = NIIF_WARNING; 
+    
     Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+
+    // Reset flags to prevent repeat notifications on status updates
+    g_nid.uFlags = oldFlags;
 }
 
 // --- Axeman Logic ---
@@ -163,11 +188,16 @@ void MonitorThread() {
 // --- UI / Tray Logic ---
 
 void UpdateTrayIcon() {
-    // We can change the tooltip to show status
     std::wstring status = L"Axeman: ";
     status += g_paused ? L"Disabled" : L"Watching";
     wcscpy_s(g_nid.szTip, status.c_str());
+    
+    g_nid.hIcon = g_paused ? g_hIconPaused : g_hIconActive;
+    g_nid.uFlags |= NIF_ICON;
+
     Shell_NotifyIcon(NIM_MODIFY, &g_nid);
+    
+    g_nid.uFlags &= ~NIF_INFO;
 }
 
 void ShowContextMenu(HWND hwnd, POINT pt) {
@@ -221,6 +251,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     g_exePath = GetExeDirectory();
     LoadConfig();
 
+    // Initialize GDI+
+    GdiplusStartupInput gdiplusStartupInput;
+    ULONG_PTR gdiplusToken;
+    GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
+    // Try to load custom PNG icons from EXE folder
+    std::filesystem::path activePath(g_exePath);
+    activePath /= L"axe.png";
+    std::filesystem::path inactivePath(g_exePath);
+    inactivePath /= L"axe-inactive.png";
+
+    g_hIconActive = LoadPNGAsIcon(activePath.wstring());
+    g_hIconPaused = LoadPNGAsIcon(inactivePath.wstring());
+
+    // Fallback to system icons if PNGs are missing
+    if (!g_hIconActive) g_hIconActive = LoadIcon(NULL, IDI_SHIELD);
+    if (!g_hIconPaused) g_hIconPaused = LoadIcon(NULL, IDI_APPLICATION);
+    if (!g_hIconActive) g_hIconActive = LoadIcon(NULL, IDI_APPLICATION);
+
     // Register Window Class
     WNDCLASS wc = {};
     wc.lpfnWndProc = WindowProc;
@@ -239,11 +288,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     g_nid.uID = ID_TRAY_ICON;
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAYICON;
-    
-    // Use System Shield Icon
-    // LoadIconMetric is safer but requires common controls 6, stick to LoadIcon for simplicity/compatibility
-    g_nid.hIcon = LoadIcon(NULL, IDI_SHIELD); 
-    if (!g_nid.hIcon) g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION); // Fallback
+    g_nid.hIcon = g_hIconActive;
 
     wcscpy_s(g_nid.szTip, L"Axeman: Watching");
     
@@ -263,6 +308,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     g_running = false;
     if (worker.joinable()) worker.join();
     Shell_NotifyIcon(NIM_DELETE, &g_nid);
+
+    if (g_hIconActive) DestroyIcon(g_hIconActive);
+    if (g_hIconPaused) DestroyIcon(g_hIconPaused);
+    GdiplusShutdown(gdiplusToken);
 
     return 0;
 }

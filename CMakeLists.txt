@@ -17,4 +17,5 @@ add_executable(axeman WIN32 src/main.cpp)
 # shell32: System tray icons
 # psapi: Memory info
 # advapi32: Process tokens/security
-target_link_libraries(axeman psapi user32 shell32 advapi32)
+# gdiplus: PNG icon loading
+target_link_libraries(axeman psapi user32 shell32 advapi32 gdiplus)
