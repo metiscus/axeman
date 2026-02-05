@@ -40,3 +40,6 @@ The app will start minimized to the tray.
 
 ## Attribution
 <a href="https://www.flaticon.com/free-icons/axe" title="axe icons">Axe icons created by ultimatearm - Flaticon</a>
+
+## Privacy Policy
+This program will not transfer any information to other networked systems.
