@@ -27,6 +27,16 @@ using namespace Gdiplus;
 #define ID_TRAY_EXIT 1001
 #define ID_TRAY_TOGGLE 1002
 #define ID_TRAY_AUTOSTART 1003
+#define ID_TRAY_THRESHOLD_90 1010
+#define ID_TRAY_THRESHOLD_91 1011
+#define ID_TRAY_THRESHOLD_92 1012
+#define ID_TRAY_THRESHOLD_93 1013
+#define ID_TRAY_THRESHOLD_94 1014
+#define ID_TRAY_THRESHOLD_95 1015
+#define ID_TRAY_THRESHOLD_96 1016
+#define ID_TRAY_THRESHOLD_97 1017
+#define ID_TRAY_THRESHOLD_98 1018
+#define ID_TRAY_THRESHOLD_99 1019
 
 const UINT ID_TRAY_ICON = 1;
 const wchar_t* CLASS_NAME = L"AxemanTrayClass";
@@ -45,6 +55,14 @@ int g_thresholdPercent = 90;
 std::wstring g_exePath;
 
 // --- Helper Functions ---
+
+void SaveConfig() {
+    std::filesystem::path iniPath(g_exePath);
+    iniPath /= L"axeman.ini";
+
+    WritePrivateProfileString(L"Settings", L"IntervalMS", std::to_wstring(g_checkIntervalMs).c_str(), iniPath.c_str());
+    WritePrivateProfileString(L"Settings", L"ThresholdPercent", std::to_wstring(g_thresholdPercent).c_str(), iniPath.c_str());
+}
 
 bool IsAutoStartEnabled() {
     HKEY hKey;
@@ -248,6 +266,13 @@ void ShowContextMenu(HWND hwnd, POINT pt) {
     if (autoStart) flags |= MF_CHECKED;
     AppendMenu(hMenu, flags, ID_TRAY_AUTOSTART, L"Launch at Startup");
 
+    HMENU hSubMenu = CreatePopupMenu();
+    for (int i = 90; i <= 99; ++i) {
+        std::wstring label = std::to_wstring(i) + L"%";
+        AppendMenu(hSubMenu, MF_STRING | (g_thresholdPercent == i ? MF_CHECKED : 0), ID_TRAY_THRESHOLD_90 + (i - 90), label.c_str());
+    }
+    AppendMenu(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, L"Memory Threshold");
+
     AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
     AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
 
@@ -277,6 +302,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             break;
         case ID_TRAY_AUTOSTART:
             SetAutoStart(!IsAutoStartEnabled());
+            break;
+        default:
+            if (LOWORD(wParam) >= ID_TRAY_THRESHOLD_90 && LOWORD(wParam) <= ID_TRAY_THRESHOLD_99) {
+                g_thresholdPercent = 90 + (LOWORD(wParam) - ID_TRAY_THRESHOLD_90);
+                SaveConfig();
+            }
             break;
         }
         break;
