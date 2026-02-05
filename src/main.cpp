@@ -26,6 +26,7 @@ using namespace Gdiplus;
 #define WM_TRAYICON (WM_USER + 1)
 #define ID_TRAY_EXIT 1001
 #define ID_TRAY_TOGGLE 1002
+#define ID_TRAY_AUTOSTART 1003
 
 const UINT ID_TRAY_ICON = 1;
 const wchar_t* CLASS_NAME = L"AxemanTrayClass";
@@ -44,6 +45,39 @@ int g_thresholdPercent = 90;
 std::wstring g_exePath;
 
 // --- Helper Functions ---
+
+bool IsAutoStartEnabled() {
+    HKEY hKey;
+    LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey);
+    if (result != ERROR_SUCCESS) return false;
+
+    wchar_t path[MAX_PATH];
+    DWORD size = sizeof(path);
+    DWORD type;
+    result = RegQueryValueEx(hKey, APP_TITLE, NULL, &type, (LPBYTE)path, &size);
+    RegCloseKey(hKey);
+
+    return (result == ERROR_SUCCESS);
+}
+
+void SetAutoStart(bool enable) {
+    HKEY hKey;
+    LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_WRITE, &hKey);
+    if (result != ERROR_SUCCESS) return;
+
+    if (enable) {
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileName(NULL, exePath, MAX_PATH);
+        // Quote the path to be safe
+        std::wstring path = L"\"";
+        path += exePath;
+        path += L"\"";
+        RegSetValueEx(hKey, APP_TITLE, 0, REG_SZ, (const BYTE*)path.c_str(), (path.length() + 1) * sizeof(wchar_t));
+    } else {
+        RegDeleteValue(hKey, APP_TITLE);
+    }
+    RegCloseKey(hKey);
+}
 
 HICON LoadPNGAsIcon(const std::wstring& path) {
     Bitmap* bitmap = Bitmap::FromFile(path.c_str());
@@ -209,6 +243,11 @@ void ShowContextMenu(HWND hwnd, POINT pt) {
         AppendMenu(hMenu, MF_STRING, ID_TRAY_TOGGLE, L"Disable Axeman");
     }
     
+    bool autoStart = IsAutoStartEnabled();
+    UINT flags = MF_STRING;
+    if (autoStart) flags |= MF_CHECKED;
+    AppendMenu(hMenu, flags, ID_TRAY_AUTOSTART, L"Launch at Startup");
+
     AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
     AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
 
@@ -235,6 +274,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case ID_TRAY_TOGGLE:
             g_paused = !g_paused;
             UpdateTrayIcon();
+            break;
+        case ID_TRAY_AUTOSTART:
+            SetAutoStart(!IsAutoStartEnabled());
             break;
         }
         break;

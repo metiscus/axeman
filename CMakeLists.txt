@@ -11,6 +11,7 @@ endif()
 
 # WIN32 tells CMake to build a GUI app (WinMain) instead of Console (main)
 add_executable(axeman WIN32 src/main.cpp)
+# add_executable(ram_eater src/ram_eater.cpp)
 
 # Link necessary Windows libraries
 # user32: Window management
