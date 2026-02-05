@@ -290,6 +290,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+    // Prevent multiple instances
+    HANDLE hMutex = CreateMutex(NULL, TRUE, L"Global\\AxemanSingleInstanceMutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        MessageBox(NULL, L"Axeman is already running.", L"Axeman", MB_OK | MB_ICONINFORMATION);
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+
     g_exePath = GetExeDirectory();
     LoadConfig();
 
